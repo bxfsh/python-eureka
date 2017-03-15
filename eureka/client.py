@@ -33,12 +33,13 @@ class EurekaGetFailedException(EurekaClientException):
 
 class EurekaClient(object):
     def __init__(self, app_name, eureka_url=None, eureka_domain_name=None, host_name=None, data_center="Amazon",
-                 vip_address=None, secure_vip_address=None, port=None, secure_port=None, use_dns=True, region=None,
-                 prefer_same_zone=True, context="eureka/v2", eureka_port=None,
+                 data_center_class=None, vip_address=None, secure_vip_address=None, port=None, secure_port=None,
+                 use_dns=True, region=None, prefer_same_zone=True, context="eureka/v2", eureka_port=None,
                  health_check_url=None):
         super(EurekaClient, self).__init__()
         self.app_name = app_name
         self.eureka_url = eureka_url
+        self.data_center_class = data_center_class
         self.data_center = data_center
         if not host_name and data_center == "Amazon":
             self.host_name = ec2metadata.get("public-hostname")
@@ -123,6 +124,10 @@ class EurekaClient(object):
         data_center_info = {
             'name': self.data_center
         }
+
+        if self.data_center_class:
+            data_center_info['@class'] = self.data_center_class
+
         if self.data_center == "Amazon":
             data_center_info['metadata'] = {
                 'ami-launch-index': ec2metadata.get('ami-launch-index'),
@@ -136,6 +141,7 @@ class EurekaClient(object):
                 'ami-id': ec2metadata.get('ami-id'),
                 'instance-type': ec2metadata.get('instance-type'),
             }
+
         instance_data = {
             'instance': {
                 'hostName': self.host_name,
@@ -143,12 +149,15 @@ class EurekaClient(object):
                 'vipAddr': self.vip_address or '',
                 'secureVipAddr': self.secure_vip_address or '',
                 'status': initial_status,
-                'port': self.port,
-                'securePort': self.secure_port,
+                'port': { "$": self.port, "@enabled": str(self.port!=None).lower() },
+                'securePort': { "$": self.secure_port, "@enabled": str(self.secure_port!=None).lower() },
                 'dataCenterInfo': data_center_info,
                 'healthCheckUrl': self.health_check_url or ''
             }
         }
+        
+        logger.info("Registering service: %s" % json.dumps(instance_data))
+
         success = False
         last_e = None
         for eureka_url in self.eureka_urls:
